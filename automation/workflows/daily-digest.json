@@ -1,0 +1,70 @@
+{
+  "id": "RecruitDigest001",
+  "name": "Recruitment – daily digest",
+  "nodes": [
+    {
+      "id": "7b2f2d2e-0002-4c3a-9b1a-000000000001",
+      "name": "Weekdays 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 * * 1-5" }] }
+      }
+    },
+    {
+      "id": "7b2f2d2e-0002-4c3a-9b1a-000000000005",
+      "name": "Run now (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200],
+      "parameters": {}
+    },
+    {
+      "id": "7b2f2d2e-0002-4c3a-9b1a-000000000002",
+      "name": "Get summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 100],
+      "parameters": {
+        "url": "={{ $env.RECRUITMENT_API_URL }}/api/reports/summary",
+        "options": { "timeout": 10000 }
+      }
+    },
+    {
+      "id": "7b2f2d2e-0002-4c3a-9b1a-000000000003",
+      "name": "Format digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 100],
+      "parameters": {
+        "jsCode": "const report = $input.first().json;\nconst jobs = report.open_jobs || [];\nconst lines = [`Recruitment digest (${new Date(report.generated_at).toDateString()})`, ''];\n\nif (!jobs.length) lines.push('No open vacancies.');\nfor (const j of jobs) {\n  lines.push(`${j.title}`);\n  lines.push(`  ${j.total_applications} applications (${j.new_last_24h} new in last 24h), ${j.awaiting_review} awaiting review`);\n  if (j.top_candidates.length) {\n    lines.push('  Top candidates:');\n    j.top_candidates.forEach((c, i) => lines.push(`    ${i + 1}. ${c.name}: ${c.score}/100 [${c.status}]${c.must_have_met ? '' : ' (must-have gap)'}`));\n  }\n  lines.push('');\n}\nlines.push('Scores are advisory; decisions are made by recruiters.');\n\nconst awaiting = jobs.reduce((n, j) => n + j.awaiting_review, 0);\nreturn [{ json: { subject: `Recruitment digest: ${awaiting} candidate(s) awaiting review`, text: lines.join('\\n'), to: $env.RECRUITER_EMAIL } }];"
+      }
+    },
+    {
+      "id": "7b2f2d2e-0002-4c3a-9b1a-000000000004",
+      "name": "Email digest",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [780, 100],
+      "disabled": true,
+      "notes": "Enable after adding SMTP credentials (see automation/README.md)",
+      "parameters": {
+        "fromEmail": "ai-recruitment@example.com",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Weekdays 08:00": { "main": [[{ "node": "Get summary", "type": "main", "index": 0 }]] },
+    "Run now (manual)": { "main": [[{ "node": "Get summary", "type": "main", "index": 0 }]] },
+    "Get summary": { "main": [[{ "node": "Format digest", "type": "main", "index": 0 }]] },
+    "Format digest": { "main": [[{ "node": "Email digest", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataSuccessExecution": "all" },
+  "active": false
+}

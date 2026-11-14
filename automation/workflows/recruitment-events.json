@@ -1,0 +1,53 @@
+{
+  "id": "RecruitEvents001",
+  "name": "Recruitment – event notifications",
+  "nodes": [
+    {
+      "id": "6a1f1c1e-0001-4c3a-9b1a-000000000001",
+      "name": "Backend event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "6a1f1c1e-0001-4c3a-9b1a-0000000000aa",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "recruitment-events",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "6a1f1c1e-0001-4c3a-9b1a-000000000002",
+      "name": "Format notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "jsCode": "// Turn a backend event into a human-readable notification.\nconst { event, data } = $input.first().json.body;\nlet subject, lines;\n\nswitch (event) {\n  case 'application.analysed':\n    subject = `New assessment: ${data.candidate_name} scored ${data.overall_score}/100 for ${data.job_title}`;\n    lines = [\n      `${data.candidate_name} has been analysed for \"${data.job_title}\".`,\n      `Score: ${data.overall_score}/100` + (data.must_have_met ? '' : ' (one or more must-have criteria not evidenced)'),\n      '',\n      'The score is advisory: please review the evidence before making a decision.',\n      data.url,\n    ];\n    break;\n  case 'application.failed':\n    subject = `CV analysis failed for ${data.job_title}`;\n    lines = [`Could not analyse ${data.candidate_name}'s CV.`, `Reason: ${data.failure_reason}`, data.url];\n    break;\n  case 'batch.completed':\n    subject = `Batch complete: ${data.analysed}/${data.total} CVs analysed for ${data.job_title}`;\n    lines = [\n      `${data.analysed} analysed, ${data.failed} failed.`,\n      '',\n      'Top candidates:',\n      ...data.top_candidates.map((c, i) => `  ${i + 1}. ${c.name} (${c.score}/100)`),\n      '',\n      data.url,\n    ];\n    break;\n  case 'review.created':\n    subject = `${data.reviewer} marked ${data.candidate_name} as ${data.decision}`;\n    lines = [`Job: ${data.job_title}`, `Decision: ${data.decision}`, `Notes: ${data.notes || '-'}`];\n    break;\n  default:\n    subject = `Recruitment event: ${event}`;\n    lines = [JSON.stringify(data, null, 2)];\n}\n\nreturn [{ json: { event, subject, text: lines.join('\\n'), to: $env.RECRUITER_EMAIL } }];"
+      }
+    },
+    {
+      "id": "6a1f1c1e-0001-4c3a-9b1a-000000000003",
+      "name": "Email recruiter",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [520, 0],
+      "disabled": true,
+      "notes": "Enable after adding SMTP credentials (see automation/README.md)",
+      "parameters": {
+        "fromEmail": "ai-recruitment@example.com",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Backend event": { "main": [[{ "node": "Format notification", "type": "main", "index": 0 }]] },
+    "Format notification": { "main": [[{ "node": "Email recruiter", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataSuccessExecution": "all" },
+  "active": false
+}
